@@ -26,8 +26,3 @@ Indirect Service Tracker for Resource Room
 - 授權：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)（創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際）
 - 參考依據：教育部國民及學前教育署《分散式資源班間接服務參考手冊》(第二版)
 - 詳細版本更新內容請見 [CHANGELOG.md](./CHANGELOG.md)
-
-## 致謝
-
-- Built with [Claude](https://claude.ai)
-- Designed by [@izensun](https://mastodon.social/@izensun)
