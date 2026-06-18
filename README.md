@@ -1,33 +1,31 @@
-# 分散式資源班間接服務紀錄系統 / Indirect Service Tracker
+# 分散式資源班間接服務紀錄系統
 
-A single-file web app for resource room teachers in Taiwan to log, analyze, and report indirect services — no installation or server required.
+專為國立高中分散式資源班教師設計的間接服務紀錄工具。純 HTML 單一檔案，無需安裝任何軟體，下載後以瀏覽器開啟即可使用。
 
-> 專為分散式資源班教師設計的間接服務紀錄工具，純 HTML 單檔，無需安裝，開啟即用。
+## 使用方式
 
-## Usage / 使用方式
+1. 下載 `IndirectServiceTracker_v1.0.html`
+2. 以任何現代瀏覽器開啟（Chrome、Edge、Firefox 均可）
+3. 資料儲存於瀏覽器本機（localStorage），不會上傳至任何伺服器
 
-1. Download `IndirectServiceTracker_v1.0.html`
-2. Open it in any modern browser
-3. Data is stored locally in your browser (localStorage)
+## 功能
 
-## Features / 功能
+- 新增、編輯、刪除間接服務紀錄
+- 儀表板：總服務時數、服務人次、服務類型分布
+- 列印報表：依日期篩選，自動產生圓餅圖
+- 匯出 CSV（可直接以 Excel 開啟）
+- 備份與還原（JSON 格式）
+- 深色模式
 
-- Add, edit, and delete service records
-- Dashboard with total hours, case counts, and service-type breakdown
-- Print reports with date filtering and auto-generated pie charts
-- Export to CSV / Excel
-- Backup and restore data as JSON
-- Dark mode
+## 已知問題
 
-## Known Issue / 已知問題
+列印預覽時，在某些解析度下圓餅圖可能與表格內容重疊。暫行解決方式：將瀏覽器列印縮放調整為 90% 以下。
 
-In print preview, pie charts may overlap table content at certain resolutions. Workaround: set browser print scale to 90% or lower.
+## 更多資訊
 
-## More Info / 更多資訊
+- 版本說明與使用手冊：https://resteachers.blogspot.com/2026/01/v10.html
+- 教師社群：https://www.facebook.com/groups/RESTeacher
 
-- Blog post & user manual: https://resteachers.blogspot.com/2026/01/v10.html
-- Community: https://www.facebook.com/groups/RESTeacher
+## 授權
 
-## License / 授權
-
-[CC BY-NC-SA 4.0](LICENSE) — free to share and adapt with attribution, non-commercially, under the same license.
+[CC BY-NC-SA 4.0](LICENSE)：可自由分享與改作，須署名、非商業使用，且以相同授權條款釋出。
