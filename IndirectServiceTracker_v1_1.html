@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分散式資源班間接服務紀錄系統 V1.1</title>
+    <!--
+        V1.1 更新紀錄 (相對於 V1.0):
+        1. [修正] 列印報表時，統計圓餅圖在某些解析度下會覆蓋表格內容。
+           根因：Chart.js 是依「螢幕」版面計算 canvas 尺寸，但瀏覽器切換到「列印」版面 (@media print)
+           的時機與圖表重新計算尺寸的時機並不同步，導致 canvas 仍維持螢幕尺寸而溢出容器、蓋住下方表格。
+           解法：監聽 beforeprint/afterprint 事件，在列印樣式確實套用後強制圖表重新計算尺寸，
+           並對 .chart-container 加上 overflow:hidden 作為雙重保險。
+        2. [修正] 項目統計：當紀錄的主要項目不在五大分類中時 (例如還原了舊版/外部資料)，
+           會被直接忽略、不計入任何統計，導致報表總數與實際紀錄數不一致。現已併入「其他」類別計算。
+        3. [修正] 列印時無法選擇「直式」：原本紙張方向是系統自動判斷、且只要勾選列印圖表就會強制橫式，
+           使用者完全無法手動覆寫。現在列印選項視窗新增「紙張方向」選擇(自動/直式/橫式)，可自由指定。
+        4. [修正] 列印時圖表文字對比度不佳：圖表文字顏色原本是依「畫面目前的深色模式設定」決定的，
+           但紙張永遠是白色——若使用者在深色模式下直接列印，淺色文字印在白紙上會幾乎看不見。
+           現在列印時會將既有圖表的文字/格線顏色強制改為淺底深字的「列印安全配色」，列印結束後再還原。
+        5. [優化] 圓餅圖標籤：當切片佔比過小 (<8%) 時，原本的文字標籤會與相鄰的小切片互相重疊、難以閱讀。
+           現已改為佔比過小時不顯示文字標籤(精確數字仍可從旁邊的統計表格與圖例讀取)；
+           同時標籤文字顏色改為依切片底色動態計算對比色 (例如黃色切片會自動改用黑字而非白字)，
+           確保每個切片上的文字都看得清楚。
+        6. [調整] 成果報告版面順序：將「分散式資源班間接服務紀錄詳表」(文字資料) 移到
+           「間接服務項目統計分析」「服務對象統計分析」(統計圖表) 之前，畫面顯示與列印順序皆為先看明細、再看統計圖表。
+        7. [強化] 還原 JSON 備份、或資料本身缺漏欄位時，不再可能讓畫面整個壞掉
+           (新增 normalizeRecord 統一補上預設值與型別檢查)。
+        8. [強化] 匯出 Excel (CSV) 時，所有欄位皆正確處理逗號/引號/換行，避免內容跑欄位。
+        9. [強化] 學生姓名、服務摘要等使用者輸入文字，輸出至畫面前皆會進行 HTML 轉義，
+           避免特殊符號 (如 < > &) 造成版面跑掉或潛在的注入風險。
+        10. [修正] 列印時圖表超出紙張寬度、右側被裁切看不到(尤其在直式或圖表與表格並排時)。
+           原本「統計表格＋長條圖」是左右並排各佔一半寬度，但圖表的寬度計算時機若與列印版面實際生效的時機
+           沒有完全同步，計算出來的寬度可能偏大，導致內容超出紙張右側而被裁掉。
+           現改為列印時「表格在上、圖表在下」垂直堆疊、各自佔滿版面寬度，不再需要左右平分寬度計算；
+           並額外加上 max-width:100% 的防護，確保即使圖表尺寸計算有誤，也只會等比例縮小顯示，
+           不會再發生「內容被裁切、資料看不到」的狀況。
+        11. [修正] 列印時圖表「直式」高度被裁切：長條圖數值較小的長條(如0、1、2節)整根消失不見，
+           Y 軸最小值不是從 0 開始；圓餅圖則上緣被裁成一個平邊。
+           根因與第10點類似，但這次是「高度」量測的時機沒有跟列印版面同步，量到的是切換列印模式前、
+           畫面上的舊高度 (350px)，導致圖表畫得比列印實際容器 (260px) 還高，超出的部分被裁掉看不到。
+           解法：列印時改為直接明確指定圖表高度為 260px (對應 CSS 設定)，不再只依賴量測容器當下高度；
+           並同時為 canvas 加上 max-height:100% 防護，雙重確保即使計算仍有誤差，效果也只是等比例縮小，
+           不會再有「長條圖底部消失、圓餅圖被裁成平邊」這類資料遺失的狀況。
+    -->
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* CSS 變數系統：支援深色模式 */
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f5f6fa; --card-bg: #ffffff; --text: #333; --border: #ddd; --danger: #e74c3c; --edit: #f39c12; --shadow: rgba(0,0,0,0.1); }
+        [data-theme="dark"] { --primary: #ecf0f1; --accent: #5dade2; --bg: #1a1a1a; --card-bg: #2d2d2d; --text: #ecf0f1; --border: #444; --shadow: rgba(0,0,0,0.3); }
+
+        body { font-family: "Microsoft JhengHei", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; min-height: 100vh; transition: background 0.3s, color 0.3s; }
+        .container { max-width: 1200px; margin: 0 auto; background: var(--card-bg); padding: 20px 20px 60px; box-shadow: 0 0 15px var(--shadow); border-radius: 12px; min-height: 80vh; position: relative; }
+
+        /* UI Components */
+        .header-tools { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .header-title h1 { margin: 0; font-size: 1.8rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .version-badge { font-size: 0.5em; background: rgba(0,0,0,0.1); padding: 2px 8px; border-radius: 10px; vertical-align: middle; color: var(--text); opacity: 0.7; }
+        .header-subtitle { font-size: 0.9rem; color: #7f8c8d; margin-top: 5px; margin-left: 42px; font-family: 'Segoe UI', sans-serif; }
+        [data-theme="dark"] .header-subtitle { color: #aaa; }
+        [data-theme="dark"] .version-badge { background: rgba(255,255,255,0.2); color: #fff; }
+        
+        .theme-toggle { cursor: pointer; font-size: 1.2rem; color: var(--text); background: none; border: none; padding: 5px; }
+
+        .tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 20px; gap: 5px; }
+        .tab-btn { padding: 12px 20px; cursor: pointer; border: none; background: none; font-size: 16px; font-weight: bold; color: var(--text); opacity: 0.6; transition: all 0.3s; }
+        .tab-btn:hover { opacity: 1; background-color: rgba(0,0,0,0.05); border-radius: 8px 8px 0 0; }
+        .tab-btn.active { color: var(--accent); border-bottom: 3px solid var(--accent); opacity: 1; }
+        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content.active { display: block; }
+
+        .form-row { display: flex; gap: 20px; margin-bottom: 15px; }
+        .form-group { flex: 1; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: var(--card-bg); color: var(--text); font-size: 1rem; }
+        
+        button { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 1rem; margin-right: 5px; transition: opacity 0.2s; display: inline-flex; align-items: center; gap: 5px; }
+        button:hover { opacity: 0.9; }
+        .btn-del { background: var(--danger); font-size: 0.9rem; padding: 6px 12px; }
+        .btn-edit { background: var(--edit); font-size: 0.9rem; padding: 6px 12px; }
+        .btn-sec { background: #95a5a6; }
+
+        .search-bar { margin-bottom: 15px; position: relative; }
+        .search-bar i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #999; }
+        .search-bar input { padding-left: 35px; }
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid var(--border); padding: 12px; text-align: left; }
+        th { background-color: rgba(0,0,0,0.05); font-weight: bold; white-space: nowrap; }
+        tr:nth-child(even) { background-color: rgba(0,0,0,0.02); }
+
+        .filter-panel { background: rgba(0,0,0,0.03); padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
+        .report-section { border: 1px solid var(--border); padding: 20px; margin-bottom: 20px; background: var(--card-bg); border-radius: 8px; page-break-inside: avoid; }
+        .report-flex { display: flex; gap: 20px; flex-wrap: wrap; }
+        .report-box { flex: 1; min-width: 300px; }
+        .chart-container { height: 350px; position: relative; max-width: 100%; }
+        .chart-container canvas { max-width: 100% !important; max-height: 100% !important; }
+        .print-controls { text-align: right; margin-bottom: 20px; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 8px; }
+        .signature-table { display: none; } /* 簽名表格僅用於列印，畫面上一律隱藏 */
+
+        .footer-info { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; font-size: 0.85em; color: #7f8c8d; line-height: 1.6; }
+        .footer-info a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); transition: all 0.2s; }
+        .footer-info a:hover { border-bottom: 1px solid var(--accent); opacity: 0.8; }
+        .footer-credits { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+
+        .alert { position: fixed; top: 20px; right: 20px; padding: 15px 25px; background: #27ae60; color: white; border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: none; z-index: 2000; }
+        .alert.error { background: #e74c3c; }
+
+        /* Print Modal & Styles */
+        .print-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .print-modal-content { background: var(--card-bg); padding: 30px; border-radius: 12px; width: 400px; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        .checkbox-group { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
+
+        @media print {
+            @page { size: A4 landscape; margin: 1cm; }
+            body { background: white; color: black; font-size: 11pt; }
+            .container { box-shadow: none; margin: 0; padding: 0; max-width: none; width: 100%; }
+            .no-print, .header-tools, .tabs, .search-bar, .filter-panel, .print-controls, .theme-toggle, .btn-edit, .btn-del, .footer-info { display: none !important; }
+            .tab-content { display: block !important; }
+            #record-tab, #list-tab, #settings-tab { display: none !important; }
+            .print-hidden { display: none !important; }
+            .report-section { border: 1px solid #000; margin-bottom: 20px; page-break-inside: avoid; }
+            .report-flex { display: block; } /* 列印時改為「表格在上、圖表在下」垂直堆疊，不再左右平分寬度，避免圖表寬度算錯時超出版面被裁切 */
+            .report-box { width: 100%; min-width: 0; margin-bottom: 15px; }
+            .chart-container { height: 260px; overflow: hidden; }
+            table { font-size: 10pt; width: 100%; }
+            th, td { border: 1px solid #000; padding: 5px; color: black; }
+            .signature-table { display: table; margin-top: 30px; width: 100%; border: 2px solid #000; page-break-inside: avoid; }
+            .signature-table th { background: #f0f0f0 !important; color: black !important; }
+            .signature-table td { height: 80px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-tools no-print">
+        <div class="header-title">
+            <h1>
+                <i class="fa-solid fa-clipboard-list"></i> 分散式資源班間接服務紀錄系統 
+                <span class="version-badge">V1.1</span>
+            </h1>
+            <div class="header-subtitle">Indirect Service Tracker for Resource Room</div>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()" title="切換深色模式">
+            <i class="fa-solid fa-moon" id="themeIcon"></i>
+        </button>
+    </div>
+
+    <div class="tabs no-print">
+        <button class="tab-btn active" onclick="switchTab('record')"><i class="fa-solid fa-pen"></i> 新增紀錄</button>
+        <button class="tab-btn" onclick="switchTab('list')"><i class="fa-solid fa-list"></i> 歷史紀錄</button>
+        <button class="tab-btn" onclick="switchTab('report')"><i class="fa-solid fa-chart-line"></i> 成果報告</button>
+        <button class="tab-btn" onclick="switchTab('settings')"><i class="fa-solid fa-gear"></i> 資料備份</button>
+    </div>
+    
+    <div id="saveAlert" class="alert"></div>
+
+    <div id="record-tab" class="tab-content active">
+        <h3 id="formTitle">新增單筆紀錄</h3>
+        <form id="recordForm">
+            <input type="hidden" id="editId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>日期</label>
+                    <input type="date" id="date" required>
+                </div>
+                <div class="form-group">
+                    <label>節次</label>
+                    <select id="sessions" required>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>學生姓名</label>
+                    <input type="text" id="studentName" placeholder="例如：王小明" required>
+                </div>
+                <div class="form-group">
+                    <label>服務對象</label>
+                    <select id="target">
+                        <option value="無">無 (非諮詢服務)</option>
+                        <option value="教師">教師</option>
+                        <option value="家長">家長</option>
+                        <option value="學生">學生本人</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>主要項目</label>
+                    <select id="mainCategory" onchange="updateSubCategories()" required></select>
+                </div>
+                <div class="form-group">
+                    <label>細項內容 (選填)</label>
+                    <select id="subCategory"><option value="">請先選擇主要項目</option></select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>服務內容摘要</label>
+                <textarea id="summary" rows="3" placeholder="請簡述服務內容..."></textarea>
+            </div>
+            <div style="margin-top: 20px;">
+                <button type="submit" id="submitBtn"><i class="fa-solid fa-save"></i> 儲存紀錄</button>
+                <button type="button" id="cancelEditBtn" class="btn-sec" style="display:none;" onclick="cancelEdit()"><i class="fa-solid fa-times"></i> 取消編輯</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="list-tab" class="tab-content">
+        <div class="search-bar">
+            <i class="fa-solid fa-search"></i>
+            <input type="text" id="searchInput" placeholder="搜尋學生、對象或摘要內容...">
+        </div>
+        <div style="margin-bottom: 10px; text-align: right;">
+             <span id="recordCount" style="float: left; line-height: 35px; font-weight: bold;"></span>
+             <button class="btn-del" onclick="clearAllData()"><i class="fa-solid fa-trash"></i> 清除所有資料</button>
+        </div>
+        <div class="table-responsive">
+            <table id="dataTable">
+                <thead><tr><th width="12%">日期</th><th width="8%">節次</th><th width="12%">學生</th><th width="10%">對象</th><th width="20%">項目</th><th>摘要</th><th width="13%">操作</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="report-tab" class="tab-content">
+        <div class="print-controls no-print">
+            <button onclick="openPrintModal()" style="background-color: #27ae60;"><i class="fa-solid fa-print"></i> 列印報告</button>
+            <button onclick="refreshAll()" class="btn-sec"><i class="fa-solid fa-rotate-right"></i> 重新整理</button>
+        </div>
+
+        <div class="filter-panel no-print">
+            <div class="form-group" style="margin: 0; min-width: 150px;">
+                <label><i class="fa-solid fa-filter"></i> 學生：</label>
+                <select id="filterStudent" onchange="generateReport()"><option value="all">全部</option></select>
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 150px;">
+                <label><i class="fa-solid fa-filter"></i> 對象：</label>
+                <select id="filterTarget" onchange="generateReport()"><option value="all">全部</option></select>
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 150px;">
+                <label><i class="fa-solid fa-calendar-days"></i> 開始日期：</label>
+                <input type="date" id="filterStart" onchange="generateReport()">
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 150px;">
+                <label><i class="fa-solid fa-calendar-days"></i> 結束日期：</label>
+                <input type="date" id="filterEnd" onchange="generateReport()">
+            </div>
+        </div>
+
+        <div id="report-details-section">
+            <h2 style="text-align: center; margin-top: 20px;">分散式資源班間接服務紀錄詳表</h2>
+            <div class="table-responsive">
+                <table id="printRecordTable" style="border: 1px solid black;">
+                    <thead><tr><th>日期</th><th>節次</th><th>學生姓名</th><th>服務對象</th><th>服務項目</th><th>內容摘要</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <table class="signature-table">
+                <thead><tr><th width="50%">資源班教師</th><th width="50%">單位主管</th></tr></thead>
+                <tbody><tr><td class="stamp-area"></td><td class="stamp-area"></td></tr></tbody>
+            </table>
+        </div>
+
+        <div id="report-charts-section">
+            <div class="report-section">
+                <h3 style="text-align:center;">間接服務項目統計分析</h3>
+                <div class="report-flex">
+                    <div class="report-box"><table id="reportTableCategory"><thead><tr><th>項目</th><th>節數</th></tr></thead><tbody></tbody></table></div>
+                    <div class="report-box"><div class="chart-container"><canvas id="chartCategoryBar"></canvas></div></div>
+                </div>
+                <div class="chart-container" style="margin-top: 20px;"><canvas id="chartCategoryPie"></canvas></div>
+            </div>
+            
+            <div class="report-section">
+                <h3 style="text-align:center;">服務對象統計分析</h3>
+                <div class="report-flex">
+                    <div class="report-box"><table id="reportTableTarget"><thead><tr><th>對象</th><th>人次</th></tr></thead><tbody></tbody></table></div>
+                    <div class="report-box"><div class="chart-container"><canvas id="chartTargetBar"></canvas></div></div>
+                </div>
+                <div class="chart-container" style="margin-top: 20px;"><canvas id="chartTargetPie"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-tab" class="tab-content">
+        <h3>資料備份與還原</h3>
+        <div style="padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg);">
+            <p><strong>備份：</strong>將目前所有紀錄匯出。</p>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="exportData()" class="btn-sec"><i class="fa-solid fa-download"></i> 下載備份 (JSON)</button>
+                <button onclick="exportToCSV()" class="btn-sec" style="background-color: #27ae60; color: white;">
+                    <i class="fa-solid fa-file-excel"></i> 匯出 Excel (CSV)
+                </button>
+            </div>
+            <p style="font-size: 0.9em; color: #666; margin-top: 5px;">* JSON 用於本系統還原備份；Excel (CSV) 用於行政繳交或外部編輯。</p>
+            
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid var(--border);">
+            
+            <p><strong>還原：</strong>選取 JSON 檔案以還原資料 (將覆蓋現有資料)。</p>
+            <input type="file" onchange="importData(this)">
+        </div>
+    </div>
+
+    <div class="footer-info no-print">
+        <p style="margin: 0;">
+            本系統參考「<a href="https://drive.google.com/file/d/1to72QaMJwzflRVjSM97mPLu-l8aDtB7a/view?usp=drive_link" target="_blank">教育部國民及學前教育署分散式資源班間接服務參考手冊(第二版)</a>」建置
+        </p>
+        <div class="footer-credits">
+            Built with Claude · Designed by <a href="https://mastodon.social/@izensun" target="_blank">@izensun</a>
+            <span style="color: #ccc;">|</span>
+            <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" title="創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際 授權條款">
+                <img alt="Creative Commons License" style="border-width:0; height: 16px; vertical-align: middle; opacity: 0.8;" src="https://i.creativecommons.org/l/by-nc-sa/4.0/80x15.png" />
+            </a>
+        </div>
+    </div>
+</div>
+
+<div id="printModal" class="print-modal no-print">
+    <div class="print-modal-content">
+        <h3><i class="fa-solid fa-print"></i> 列印選項</h3>
+        <div class="checkbox-group">
+            <label><input type="checkbox" id="printCheckDetails" checked> 列印詳細紀錄表</label>
+            <label><input type="checkbox" id="printCheckCharts" checked> 列印統計圖表</label>
+        </div>
+        <div class="checkbox-group" style="border-top: 1px solid var(--border); padding-top: 12px;">
+            <label style="font-weight: bold; margin-bottom: 2px;">紙張方向：</label>
+            <label><input type="radio" name="printOrientation" value="auto" checked> 自動 (依列印內容調整)</label>
+            <label><input type="radio" name="printOrientation" value="portrait"> 直式</label>
+            <label><input type="radio" name="printOrientation" value="landscape"> 橫式</label>
+        </div>
+        <div style="text-align: right; margin-top: 20px;">
+            <button onclick="executePrint()"><i class="fa-solid fa-check"></i> 開始列印</button>
+            <button onclick="closePrintModal()" class="btn-sec">取消</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const CONFIG = {
+        subCategories: {
+            "需求評估與處理": ["個案資料的建立與管理", "學習情境的評估與適配", "輔具的申請與訓練", "專業團隊服務的規劃與合作", "巡迴輔導教師的規劃與合作", "同儕支持服務的建立與訓練", "轉銜輔導與服務"],
+            "個別晤談與指導": ["個別晤談", "適性輔導", "學習指導"],
+            "諮詢服務": ["特殊教育諮詢服務", "課程調整諮詢服務"],
+            "入班支援": ["入班觀察與協助", "行為功能介入方案實施"],
+            "其他": ["特教學生助理人員的申請與工作職責說明", "突發事件的協助與處理", "特殊教育宣導"]
+        },
+        chartColors: ['#3498db', '#e74c3c', '#2ecc71', '#9b59b6', '#f1c40f', '#1abc9c', '#34495e']
+    };
+
+    Chart.register(ChartDataLabels);
+
+    // 將任意字串安全地轉為可放入 innerHTML 的文字，避免 < > & " ' 等符號破壞版面或造成注入風險
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+
+    // 統一補上欄位預設值與型別檢查：無論是舊版資料、手動編輯過的 JSON，或欄位缺漏，
+    // 都能轉成系統可正常運作的格式，避免後續畫面渲染時因 undefined 而整個壞掉
+    function normalizeRecord(r) {
+        r = r || {};
+        return {
+            id: (typeof r.id === 'number' && !isNaN(r.id)) ? r.id : Date.now() + Math.floor(Math.random() * 1000),
+            date: typeof r.date === 'string' ? r.date : '',
+            sessions: (typeof r.sessions === 'number' && !isNaN(r.sessions)) ? r.sessions : 0,
+            student: typeof r.student === 'string' ? r.student : '',
+            target: typeof r.target === 'string' ? r.target : '其他',
+            mainCategory: typeof r.mainCategory === 'string' ? r.mainCategory : '其他',
+            subCategory: typeof r.subCategory === 'string' ? r.subCategory : '未指定',
+            summary: typeof r.summary === 'string' ? r.summary : ''
+        };
+    }
+
+    let records;
+    try {
+        records = (JSON.parse(localStorage.getItem('sped_records')) || []).map(normalizeRecord);
+    } catch (e) {
+        console.error('讀取本機資料失敗，已重置為空清單：', e);
+        records = [];
+    }
+    let charts = {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        initFormOptions();
+        if(!document.getElementById('date').value) document.getElementById('date').valueAsDate = new Date();
+        refreshAll();
+        
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => renderTable(), 300);
+        });
+    });
+
+    function validateForm() {
+        const sessions = parseFloat(document.getElementById('sessions').value);
+        if (isNaN(sessions) || sessions <= 0) return showAlert('錯誤：請選擇節次', true);
+        const student = document.getElementById('studentName').value.trim();
+        if (!student) return showAlert('錯誤：請輸入學生姓名', true);
+        if (student.length > 50) return showAlert('錯誤：學生姓名過長', true);
+        if (document.getElementById('summary').value.length > 1000) return showAlert('錯誤：摘要內容過長', true);
+        return true;
+    }
+
+    function refreshAll() {
+        renderTable();
+        updateFilterOptions();
+        generateReport();
+    }
+
+    // Theme & UX
+    function initTheme() {
+        const theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        document.getElementById('themeIcon').className = theme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+    }
+    function toggleTheme() {
+        const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        document.getElementById('themeIcon').className = next === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+        generateReport();
+    }
+
+    // Form Logic
+    function initFormOptions() {
+        const mainSelect = document.getElementById('mainCategory');
+        mainSelect.innerHTML = '<option value="">請選擇</option>';
+        Object.keys(CONFIG.subCategories).forEach(key => mainSelect.add(new Option(key, key)));
+    }
+    function updateSubCategories(selectedSub = null) {
+        const main = cleanText(document.getElementById('mainCategory').value);
+        const subSelect = document.getElementById('subCategory');
+        subSelect.innerHTML = '<option value="">請選擇細項(可選)</option>';
+        if (main && CONFIG.subCategories[main]) CONFIG.subCategories[main].forEach(sub => subSelect.add(new Option(sub, sub)));
+        if (selectedSub) subSelect.value = cleanText(selectedSub);
+    }
+
+    document.getElementById('recordForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!validateForm()) return;
+        const editId = document.getElementById('editId').value;
+        const formData = {
+            id: editId ? parseInt(editId) : Date.now(),
+            date: document.getElementById('date').value,
+            sessions: parseFloat(document.getElementById('sessions').value),
+            student: document.getElementById('studentName').value.trim(),
+            target: document.getElementById('target').value,
+            mainCategory: document.getElementById('mainCategory').value,
+            subCategory: document.getElementById('subCategory').value || "未指定",
+            summary: document.getElementById('summary').value.trim()
+        };
+        
+        if (editId) {
+            records[records.findIndex(r => r.id === parseInt(editId))] = formData;
+            showAlert('更新成功！');
+            saveData();
+            refreshAll();
+            resetForm();
+            switchTab('list');
+        } else {
+            records.push(formData);
+            showAlert('新增成功！');
+            saveData();
+            refreshAll();
+            resetForm(true); 
+        }
+    });
+
+    function resetForm(keepDate = false) {
+        const lastDate = document.getElementById('date').value;
+        document.getElementById('recordForm').reset();
+        document.getElementById('editId').value = '';
+        if(keepDate && lastDate) document.getElementById('date').value = lastDate;
+        else document.getElementById('date').valueAsDate = new Date();
+        
+        const btn = document.getElementById('submitBtn');
+        btn.innerHTML = '<i class="fa-solid fa-save"></i> 儲存紀錄';
+        btn.className = '';
+        document.getElementById('formTitle').textContent = '新增單筆紀錄';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+        document.getElementById('sessions').value = '1';
+        updateSubCategories();
+    }
+
+    function cancelEdit() {
+        resetForm();
+        switchTab('list');
+    }
+
+    function editRecord(id) {
+        const r = records.find(i => i.id === id);
+        if (!r) return;
+        document.getElementById('editId').value = r.id;
+        document.getElementById('date').value = r.date;
+        document.getElementById('sessions').value = r.sessions;
+        document.getElementById('studentName').value = r.student;
+        document.getElementById('target').value = r.target;
+        document.getElementById('mainCategory').value = cleanText(r.mainCategory);
+        updateSubCategories(r.subCategory);
+        document.getElementById('subCategory').value = cleanText(r.subCategory);
+        document.getElementById('summary').value = r.summary;
+
+        const btn = document.getElementById('submitBtn');
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> 更新紀錄';
+        btn.className = 'btn-edit';
+        document.getElementById('formTitle').textContent = '編輯紀錄中...';
+        document.getElementById('cancelEditBtn').style.display = 'inline-flex';
+        switchTab('record');
+        window.scrollTo(0,0);
+    }
+
+    function renderTable() {
+        const tbody = document.querySelector('#dataTable tbody');
+        const filter = document.getElementById('searchInput').value.toLowerCase();
+        
+        const filtered = records.filter(r => 
+            r.student.toLowerCase().includes(filter) || 
+            r.target.toLowerCase().includes(filter) || 
+            r.summary.toLowerCase().includes(filter)
+        ).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        document.getElementById('recordCount').textContent = `共 ${filtered.length} 筆`;
+        tbody.innerHTML = '';
+        
+        const fragment = document.createDocumentFragment();
+        filtered.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${escapeHtml(r.date)}</td><td style="text-align:center">${escapeHtml(r.sessions)}</td><td>${escapeHtml(r.student)}</td><td>${escapeHtml(r.target)}</td>
+                <td><strong>${escapeHtml(cleanText(r.mainCategory))}</strong><br><small style="color:#666">${escapeHtml(cleanText(r.subCategory))}</small></td>
+                <td><small>${escapeHtml(r.summary.substring(0, 15))}${r.summary.length>15?'...':''}</small></td>
+                <td><button class="btn-edit" onclick="editRecord(${r.id})"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn-del" onclick="deleteRecord(${r.id})"><i class="fa-solid fa-trash"></i></button></td>`;
+            fragment.appendChild(tr);
+        });
+        tbody.appendChild(fragment);
+    }
+
+    function updateFilterOptions() {
+        const setOptions = (id, items) => {
+            const select = document.getElementById(id);
+            const val = select.value;
+            select.innerHTML = `<option value="all">全部${id.includes('Student')?'學生':'對象'}</option>`;
+            items.forEach(i => select.add(new Option(i, i)));
+            if(items.includes(val)) select.value = val;
+        };
+        setOptions('filterStudent', [...new Set(records.map(r => r.student))]);
+        setOptions('filterTarget', [...new Set(records.map(r => r.target))]);
+    }
+
+    function generateReport() {
+        const filterStu = document.getElementById('filterStudent').value;
+        const filterTar = document.getElementById('filterTarget').value;
+        const filterStart = document.getElementById('filterStart').value;
+        const filterEnd = document.getElementById('filterEnd').value;
+
+        const reportData = records.filter(r => {
+            const matchStu = (filterStu === 'all' || r.student === filterStu);
+            const matchTar = (filterTar === 'all' || r.target === filterTar);
+            const matchDate = (!filterStart || r.date >= filterStart) && (!filterEnd || r.date <= filterEnd);
+            return matchStu && matchTar && matchDate;
+        });
+
+        const catStats = { "需求評估與處理":0, "個別晤談與指導":0, "諮詢服務":0, "入班支援":0, "其他":0 };
+        const tarStats = { "教師":0, "家長":0, "學生":0, "其他":0 };
+        
+        reportData.forEach(r => {
+            const m = cleanText(r.mainCategory), t = cleanText(r.target);
+            if(catStats.hasOwnProperty(m)) catStats[m] += 1; else catStats["其他"] += 1;
+            if(tarStats.hasOwnProperty(t)) tarStats[t] += 1; else tarStats["其他"] += 1;
+        });
+
+        updateStatsTable('reportTableCategory', catStats, true);
+        updateStatsTable('reportTableTarget', tarStats, false);
+        
+        drawChart('chartCategoryBar', 'bar', Object.keys(catStats), Object.values(catStats));
+        drawChart('chartCategoryPie', 'pie', Object.keys(catStats), Object.values(catStats));
+        drawChart('chartTargetBar', 'bar', Object.keys(tarStats), Object.values(tarStats));
+        drawChart('chartTargetPie', 'pie', Object.keys(tarStats), Object.values(tarStats));
+
+        const printBody = document.querySelector('#printRecordTable tbody');
+        printBody.innerHTML = '';
+        reportData.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach(r => {
+            printBody.innerHTML += `<tr><td>${escapeHtml(r.date)}</td><td style="text-align:center">${escapeHtml(r.sessions)}</td><td>${escapeHtml(r.student)}</td><td>${escapeHtml(r.target)}</td>
+                <td>${escapeHtml(cleanText(r.mainCategory))}<br><small>${escapeHtml(cleanText(r.subCategory))}</small></td><td>${escapeHtml(r.summary)}</td></tr>`;
+        });
+    }
+
+    function updateStatsTable(id, data, hasTotal) {
+        const tbody = document.querySelector(`#${id} tbody`);
+        const fragment = document.createDocumentFragment();
+        let sum = 0;
+        Object.entries(data).forEach(([k, v]) => { 
+            const tr = document.createElement('tr'); tr.innerHTML = `<td>${k}</td><td>${v}</td>`; fragment.appendChild(tr); sum += v; 
+        });
+        if(hasTotal) {
+            const tr = document.createElement('tr'); tr.innerHTML = `<td><strong>總計</strong></td><td><strong>${sum}</strong></td>`; fragment.appendChild(tr);
+        }
+        tbody.innerHTML = ''; tbody.appendChild(fragment);
+    }
+
+    // 依背景色明亮度動態決定文字應為黑或白，確保圓餅圖每個切片上的文字都有足夠對比度
+    // (例如目前配色中的黃色 #f1c40f 偏亮，用白字會看不清楚，這裡會自動改用黑字)
+    function getContrastColor(hex) {
+        const c = (hex || '').replace('#', '');
+        const r = parseInt(c.substring(0, 2), 16), g = parseInt(c.substring(2, 4), 16), b = parseInt(c.substring(4, 6), 16);
+        const luma = (r * 299 + g * 587 + b * 114) / 1000; // 感知亮度 (YIQ 公式)
+        return luma > 150 ? '#000' : '#fff';
+    }
+
+    // 取得目前文字/格線應使用的顏色。forcePrint=true 時一律回傳「淺底深字」的列印安全配色，
+    // 不受畫面當前深色模式影響；forcePrint=false 時則依目前畫面的深色模式設定決定
+    function getThemeColors(forcePrint) {
+        const isDark = !forcePrint && document.documentElement.getAttribute('data-theme') === 'dark';
+        return { text: isDark ? '#ecf0f1' : '#333', grid: isDark ? '#444' : '#ddd' };
+    }
+
+    function drawChart(id, type, labels, data) {
+        const ctx = document.getElementById(id).getContext('2d');
+        if (charts[id]) charts[id].destroy();
+        const { text: color, grid: gridColor } = getThemeColors(false);
+        
+        charts[id] = new Chart(ctx, {
+            type: type,
+            data: { labels, datasets: [{ label: type==='bar'?'節數':'佔比', data, backgroundColor: CONFIG.chartColors, borderWidth: 1 }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: type === 'pie', position: 'right', labels: { color } },
+                    datalabels: type === 'pie' ? {
+                        color: (ctx) => getContrastColor(CONFIG.chartColors[ctx.dataIndex % CONFIG.chartColors.length]),
+                        font: { weight: 'bold' },
+                        formatter: (v, c) => {
+                            const all = c.chart.data.datasets[0].data;
+                            const total = all.reduce((a, b) => a + b, 0);
+                            // 佔比過小 (<8%) 時不顯示標籤文字，避免緊鄰的小切片彼此重疊、看不清楚；
+                            // 精確數字仍可從旁邊的統計表格讀取
+                            if (!v || total === 0 || v / total < 0.08) return '';
+                            return c.chart.data.labels[c.dataIndex] + '\n' + v;
+                        }
+                    } : { display: false }
+                },
+                scales: type === 'bar' ? { x: { ticks: { color }, grid: { color: gridColor } }, y: { ticks: { color }, grid: { color: gridColor }, beginAtZero: true } } : {}
+            }, plugins: [ChartDataLabels]
+        });
+    }
+
+    // 修正已知問題：列印報表時統計圓餅圖可能覆蓋表格內容，且深色模式下文字對比度不佳
+    // 根因一(覆蓋表格)：Chart.js 的 canvas 尺寸是依「螢幕」版面計算的，但 @media print 樣式只會在瀏覽器
+    // 實際進行列印時才套用；若不主動重新計算，canvas 會維持螢幕尺寸而溢出容器、蓋住下方表格。
+    // 根因二(對比度不佳)：圖表文字顏色是依「畫面目前的深色模式設定」決定的，但紙張永遠是白色，
+    // 若使用者用深色模式瀏覽後直接列印，淺色文字印在白紙上會幾乎看不見。
+    // 解法：在 beforeprint 時直接修改「現有」圖表物件的顏色設定、再呼叫 resize()/update() 重繪。
+    // 這裡刻意不整個銷毀重建圖表 (new Chart)：重新建立圖表需要經過一次內部繪製週期才會真正畫出內容，
+    // 若列印的版面快照剛好在這個週期完成前被擷取，就會印出空白的圖表。直接修改現有圖表物件並重繪，
+    // 不會有銷毀重建的過程，因此不會有「印出空白圖表」的風險，同時仍能達到列印安全配色與正確尺寸。
+    // afterprint 則用同樣方式把顏色還原成畫面當前的主題設定。
+    // 這個寫法也能涵蓋使用者直接按 Ctrl+P／瀏覽器選單列印的情況，不只限於系統內的「列印報告」按鈕。
+    function applyChartColors(forcePrint) {
+        const { text: color, grid: gridColor } = getThemeColors(forcePrint);
+        Object.values(charts).forEach(chart => {
+            chart.options.plugins.legend.labels.color = color;
+            if (chart.config.type === 'bar') {
+                chart.options.scales.x.ticks.color = color;
+                chart.options.scales.x.grid.color = gridColor;
+                chart.options.scales.y.ticks.color = color;
+                chart.options.scales.y.grid.color = gridColor;
+            }
+            if (forcePrint) {
+                // 列印版面的圖表高度固定為 260px (對應 CSS 的 .chart-container 設定)，這裡直接明確指定，
+                // 不完全依賴「量測容器目前高度」的時機是否準確，避免量到尚未切換成列印版面前的螢幕高度(350px)，
+                // 導致圖表畫得太高、下緣 (長條圖底部/圓餅圖部分) 被 overflow:hidden 裁掉看不到。
+                const containerWidth = chart.canvas.parentElement.getBoundingClientRect().width || chart.width;
+                chart.resize(containerWidth, 260);
+            } else {
+                chart.resize();
+            }
+            chart.update('none');
+        });
+    }
+    window.addEventListener('beforeprint', () => applyChartColors(true));
+    window.addEventListener('afterprint', () => applyChartColors(false));
+
+    function openPrintModal() { document.getElementById('printModal').style.display = 'flex'; }
+    function closePrintModal() { document.getElementById('printModal').style.display = 'none'; }
+    function executePrint() {
+        closePrintModal();
+        const showCharts = document.getElementById('printCheckCharts').checked, showDetails = document.getElementById('printCheckDetails').checked;
+        const orientationChoice = document.querySelector('input[name="printOrientation"]:checked').value;
+        document.getElementById('report-charts-section').classList.toggle('print-hidden', !showCharts);
+        document.getElementById('report-details-section').classList.toggle('print-hidden', !showDetails);
+        document.querySelector('.signature-table').classList.toggle('print-hidden', !showDetails);
+
+        let orientation;
+        if (orientationChoice === 'portrait') orientation = 'portrait';
+        else if (orientationChoice === 'landscape') orientation = 'landscape';
+        else orientation = (!showCharts && showDetails) ? 'portrait' : 'landscape'; // 自動：只印文字表格用直式，含圖表用橫式
+
+        const style = document.createElement('style');
+        style.innerHTML = `@media print { @page { size: A4 ${orientation}; margin: 1cm; } }`;
+        document.head.appendChild(style);
+        setTimeout(() => { window.print(); style.remove(); }, 300);
+    }
+
+    function cleanText(text) {
+        if (!text) return "";
+        if (text.includes("、")) return text.split("、")[1];
+        if (text.includes(" ") && /\d/.test(text.split(" ")[0])) return text.substring(text.indexOf(" ") + 1);
+        return text;
+    }
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content, .tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId + '-tab').classList.add('active');
+        document.querySelectorAll('.tab-btn')[['record', 'list', 'report', 'settings'].indexOf(tabId)].classList.add('active');
+        if(tabId === 'report') generateReport();
+    }
+    function showAlert(msg, isError) {
+        const el = document.getElementById('saveAlert');
+        el.className = isError ? 'alert error' : 'alert';
+        el.innerHTML = `<i class="fa-solid ${isError?'fa-triangle-exclamation':'fa-check-circle'}"></i> ${msg}`;
+        el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); return false;
+    }
+    function saveData() { localStorage.setItem('sped_records', JSON.stringify(records)); }
+    function deleteRecord(id) { if(confirm('確定刪除？')) { records = records.filter(r => r.id !== id); saveData(); refreshAll(); }}
+    function clearAllData() { if(confirm('警告：確定刪除所有紀錄？')) { records = []; saveData(); refreshAll(); }}
+    
+    function exportData() {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(records)], {type: "application/json"}));
+        a.download = `間接服務紀錄_備份_${new Date().toISOString().slice(0,10)}.json`; a.click();
+    }
+
+    function csvField(value) {
+        const str = String(value ?? '');
+        return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    }
+
+    function exportToCSV() {
+        if (records.length === 0) { showAlert('沒有資料可匯出', true); return; }
+        let csv = "\uFEFF日期,節次,學生姓名,服務對象,主要項目,細項內容,摘要\n";
+        const sorted = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
+        sorted.forEach(r => {
+            const row = [r.date, r.sessions, r.student, r.target, cleanText(r.mainCategory), cleanText(r.subCategory), r.summary]
+                .map(csvField).join(",");
+            csv += row + "\n";
+        });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `間接服務紀錄表_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+    
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (!Array.isArray(data)) { showAlert('檔案格式錯誤：非有效的備份檔', true); return; }
+                if (!confirm('覆蓋現有資料？')) return;
+                records = data.map(normalizeRecord);
+                saveData();
+                refreshAll();
+                showAlert('還原成功！');
+            } catch {
+                showAlert('格式錯誤', true);
+            }
+        };
+        reader.onerror = () => showAlert('檔案讀取失敗', true);
+        reader.readAsText(file);
+        input.value = '';
+    }
+</script>
+</body>
+</html>
