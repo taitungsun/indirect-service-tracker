@@ -4,6 +4,7 @@ Indirect Service Tracker for Resource Room
 
 [![Version](https://img.shields.io/badge/version-1.1-blue)]()
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi)](https://ko-fi.com/izensun)
 
 高中職資源班教師專用的輕量化間接服務紀錄工具，協助簡化登錄、統計與報表產出流程。系統採用單一 HTML 檔案架構，免安裝、跨平台、資料落地儲存在使用者自己的瀏覽器中。
 
@@ -26,3 +27,9 @@ Indirect Service Tracker for Resource Room
 - 授權：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)（創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際）
 - 參考依據：教育部國民及學前教育署《分散式資源班間接服務參考手冊》(第二版)
 - 詳細版本更新內容請見 [CHANGELOG.md](./CHANGELOG.md)
+
+## 支持開發
+
+如果這個工具對您有幫助，歡迎透過 Ko-fi 請我喝杯咖啡
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/izensun)
