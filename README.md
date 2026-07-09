@@ -2,7 +2,7 @@
 
 Indirect Service Tracker for Resource Room
 
-[![Version](https://img.shields.io/badge/version-1.1-blue)]()
+[![Version](https://img.shields.io/badge/version-1.2-blue)](https://github.com/taitungsun/indirect-service-tracker/blob/master)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi)](https://ko-fi.com/izensun)
 
@@ -17,16 +17,23 @@ Indirect Service Tracker for Resource Room
 
 ## 使用方式
 
-1. 下載 `IndirectServiceTracker_v1_1.html`。
+1. 下載 `IndirectServiceTracker_v1_2.html`。
 2. 用瀏覽器（建議 Chrome / Edge）開啟該檔案即可使用，所有資料儲存在瀏覽器的 `localStorage`，不會上傳到任何伺服器。
 3. 建議定期使用「資料備份」頁籤匯出 JSON 備份檔，避免清除瀏覽器資料時遺失紀錄。
 
+### 從舊版升級
+
+舊版（V1.0 / V1.1）與 V1.2 的資料儲存格式相同，且共用同一個瀏覽器 `localStorage`：
+
+- 用**同一個瀏覽器**開啟新版檔案，即可直接看到原有資料，不需任何轉移步驟。
+- 若要換瀏覽器或換電腦，請先在舊版「資料備份」頁籤匯出 JSON，再於新版匯入還原。
+
 ## 版本資訊
 
-- 目前版本：**V1.1**
+- 目前版本：**V1.2**
 - 授權：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)（創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際）
 - 參考依據：教育部國民及學前教育署《分散式資源班間接服務參考手冊》(第二版)
-- 詳細版本更新內容請見 [CHANGELOG.md](./CHANGELOG.md)
+- 詳細版本更新內容請見 [CHANGELOG.md](CHANGELOG.md)
 
 ## 支持開發
 
