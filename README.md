@@ -94,7 +94,7 @@
 
 ## 支持開發
 
-如果這個工具對您有幫助，歡迎透過 Ko-fi 請我喝杯咖啡 ☕
+如果這個工具對您有幫助，歡迎透過 Ko-fi 請我喝杯咖啡
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/izensun)
 
