@@ -1,13 +1,15 @@
-# 分散式資源班間接服務紀錄系統
+# 分散式資源班間接服務紀錄系統 IST
 
-Indirect Service Tracker for Resource Room
+**Indirect Service Tracker for Resource Room · v1.4**
 
-[![Version](https://img.shields.io/badge/version-1.4-blue)](https://github.com/taitungsun/indirect-service-tracker/blob/master)
-[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+[![Version](https://img.shields.io/badge/version-1.4-blue)](../../releases/latest)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hant)
 [![Platform](https://img.shields.io/badge/Platform-Browser%20(Offline)-blue)](#技術說明)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi)](https://ko-fi.com/izensun)
 
 高中職資源班教師專用的輕量化間接服務紀錄工具，協助簡化登錄、統計與報表產出流程。系統採用單一 HTML 檔案架構，免安裝、跨平台、完全離線可用，資料落地儲存在使用者自己的瀏覽器中。
+
+---
 
 ## 主要功能
 
@@ -17,12 +19,16 @@ Indirect Service Tracker for Resource Room
 - **學生名單（與 SEAM 整合）**：可從 [SEAM 特殊教育行政管理系統](https://github.com/taitungsun/seam) 匯入在學學生名單，登錄時直接選取學生，避免同一學生出現不同寫法。
 - **資料安全與個人化**：JSON 備份與還原、超過 30 天未備份自動提醒、儲存用量顯示；支援深色模式切換。
 
+---
+
 ## 快速開始
 
-1. 下載 `IndirectServiceTracker_v1_4.html`。
+1. 到 [Releases](../../releases) 下載最新版的 `IndirectServiceTracker_v1_4.html`。
 2. 用瀏覽器（建議 Chrome / Edge）開啟該檔案即可使用。
 3. 首次使用時，到「設定與備份」頁填寫學校名稱與資源班教師，這些資料會顯示在成果報告上。
 4. （選用）若有使用 SEAM，可在「設定與備份 → 學生名單」匯入學生名單。
+
+---
 
 ## 資料備份與還原
 
@@ -41,6 +47,8 @@ Indirect Service Tracker for Resource Room
 - 部分瀏覽器會依檔案存放位置分開儲存，若新版中看不到資料，請用舊版匯出 JSON 備份，再於新版還原即可。
 - 若要換瀏覽器或換電腦，請先匯出 JSON 備份，再於新環境還原。
 
+---
+
 ## 學生名單與 SEAM 整合
 
 | 方式 | 說明 |
@@ -52,6 +60,8 @@ Indirect Service Tracker for Resource Room
 - 若 IST 尚未設定學校名稱，會一併帶入 SEAM 的學校名稱。
 - 登錄紀錄時，輸入名單外的姓名會先確認一次；過去紀錄中已出現的姓名（如已畢業學生）不再詢問。
 
+---
+
 ## 技術說明
 
 - **架構**：單一 HTML 檔，原生 JavaScript，不依賴任何框架
@@ -60,15 +70,37 @@ Indirect Service Tracker for Resource Room
 - **儲存**：瀏覽器 `localStorage`（約 5 MB；設定頁可查看目前用量）
 - **隱私**：資料只存在使用者本機，不會傳送到任何伺服器
 
+---
+
 ## 版本資訊
 
 - 目前版本：**V1.4**
-- 授權：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)（創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際）
 - 參考依據：教育部國民及學前教育署《分散式資源班間接服務參考手冊》(第二版)
 - 詳細版本更新內容請見 [CHANGELOG.md](CHANGELOG.md)
 
+---
+
+## 授權
+
+本系統採用 [創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際授權條款（CC BY-NC-SA 4.0）](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hant)。
+
+- **姓名標示**：使用或改作時，須標示原作者。
+- **非商業性**：不得用於商業目的。
+- **相同方式分享**：改作後再散布，須採用相同授權條款。
+
+完整條款請見 [LICENSE](LICENSE)。
+
+---
+
 ## 支持開發
 
-如果這個工具對您有幫助，歡迎透過 Ko-fi 請我喝杯咖啡
+如果這個工具對您有幫助，歡迎透過 Ko-fi 請我喝杯咖啡 ☕
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/izensun)
+
+---
+
+## 作者
+
+Designed by [@izensun](https://mastodon.social/@izensun)
+Built with [Claude](https://claude.ai) (Anthropic)
